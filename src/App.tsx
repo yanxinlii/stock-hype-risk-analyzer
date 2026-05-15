@@ -1,5 +1,13 @@
 import { useMemo, useState } from 'react'
-import { availableTickers, marketOverview, quickTickers, stockData, type PricePoint, type RiskLevel, type StockProfile } from './mockData'
+import {
+  availableTickers,
+  marketOverview,
+  quickTickers,
+  stockData,
+  type PricePoint,
+  type RiskLevel,
+  type StockProfile,
+} from './mockData'
 
 const navItems = [
   { label: 'Overview', id: 'overview' },
@@ -7,136 +15,267 @@ const navItems = [
   { label: 'Watchlist', id: 'watchlist' },
   { label: 'Sentiment', id: 'sentiment' },
   { label: 'Risk Drivers', id: 'risk-drivers' },
-  { label: 'Signal Breakdown', id: 'signal-breakdown' },
+  { label: 'Methodology', id: 'methodology' },
 ]
 
-function money(value: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: value > 1000 ? 0 : 2 }).format(value)
+const chartWidth = 760
+const chartHeight = 300
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: value > 1000 ? 0 : 2,
+  }).format(value)
 }
 
-function pct(value: number) {
+function signedPercent(value: number) {
   return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`
 }
 
-function riskColor(level: RiskLevel) {
-  const colors: Record<RiskLevel, string> = {
-    Low: 'border-emerald-300/30 bg-emerald-300/10 text-emerald-200',
-    Moderate: 'border-cyan-300/30 bg-cyan-300/10 text-cyan-200',
-    Elevated: 'border-amber-300/30 bg-amber-300/10 text-amber-200',
-    High: 'border-orange-300/30 bg-orange-300/10 text-orange-200',
-    Extreme: 'border-rose-300/30 bg-rose-300/10 text-rose-200',
-  }
-  return colors[level]
+function riskKey(level: RiskLevel) {
+  return level.toLowerCase()
 }
 
-function chartPath(data: PricePoint[]) {
-  const width = 720
-  const height = 300
-  const pad = 28
+function riskClass(level: RiskLevel) {
+  return `risk-tag risk-tag--${riskKey(level)}`
+}
+
+function confidenceClass(confidence: StockProfile['confidence']) {
+  if (confidence === 'High confidence') return 'quality-tag quality-tag--high'
+  if (confidence === 'Medium confidence') return 'quality-tag quality-tag--medium'
+  return 'quality-tag quality-tag--low'
+}
+
+function trendClass(value: number) {
+  return value >= 0 ? 'trend trend--up' : 'trend trend--down'
+}
+
+function pointsFor(data: PricePoint[]) {
+  const padding = 28
   const values = data.map((point) => point.price)
   const min = Math.min(...values)
   const max = Math.max(...values)
   const spread = max - min || 1
-  const points = data.map((point, index) => {
-    const x = pad + (index / (data.length - 1 || 1)) * (width - pad * 2)
-    const y = height - pad - ((point.price - min) / spread) * (height - pad * 2)
+
+  return data.map((point, index) => {
+    const x = padding + (index / (data.length - 1 || 1)) * (chartWidth - padding * 2)
+    const y = chartHeight - padding - ((point.price - min) / spread) * (chartHeight - padding * 2)
     return { ...point, x, y }
   })
-  const line = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ')
-  const area = `${line} L ${width - pad},${height - pad} L ${pad},${height - pad} Z`
-  return { area, line, points }
 }
 
-function PriceChart({ stock }: { stock: StockProfile }) {
-  const { area, line, points } = chartPath(stock.historicalPriceData)
-  const latest = stock.historicalPriceData[stock.historicalPriceData.length - 1]
+function PriceTrendChart({ stock }: { stock: StockProfile }) {
+  const points = pointsFor(stock.historicalPriceData)
+  const linePath = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(' ')
+  const areaPath = `${linePath} L ${chartWidth - 28},${chartHeight - 28} L 28,${chartHeight - 28} Z`
+  const first = stock.historicalPriceData[0].price
+  const last = stock.historicalPriceData[stock.historicalPriceData.length - 1].price
 
   return (
-    <svg viewBox='0 0 720 300' className='h-full w-full' role='img' aria-label={`${stock.symbol} 30 day price path`}>
+    <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="price-chart" role="img" aria-label={`${stock.symbol} historical price trend`}>
       <defs>
-        <linearGradient id='price-fill' x1='0' x2='0' y1='0' y2='1'>
-          <stop offset='0%' stopColor='#22d3ee' stopOpacity='0.34' />
-          <stop offset='100%' stopColor='#22d3ee' stopOpacity='0' />
+        <linearGradient id="price-area" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stopColor="#2f6f63" stopOpacity="0.2" />
+          <stop offset="100%" stopColor="#2f6f63" stopOpacity="0" />
         </linearGradient>
       </defs>
-      {[54, 103, 152, 201, 250].map((y) => <line key={y} x1='28' x2='692' y1={y} y2={y} stroke='rgba(255,255,255,0.08)' />)}
-      <path d={area} fill='url(#price-fill)' />
-      <path d={line} fill='none' stroke='#a3e635' strokeLinecap='round' strokeLinejoin='round' strokeWidth='4' />
-      {points.map((point) => <circle key={point.date} cx={point.x} cy={point.y} r='4' fill='#f8fafc' stroke='#07100e' strokeWidth='2' />)}
-      <text x='28' y='28' fill='#d4d4d8' fontSize='13'>{money(stock.historicalPriceData[0].price)}</text>
-      <text x='595' y='28' fill='#86efac' fontSize='13'>{money(latest.price)}</text>
+      {[52, 101, 150, 199, 248].map((y) => (
+        <line key={y} x1="28" x2="732" y1={y} y2={y} className="chart-gridline" />
+      ))}
+      <path d={areaPath} fill="url(#price-area)" />
+      <path d={linePath} className="chart-line" />
+      {points.map((point, index) => (
+        <circle key={point.date} cx={point.x} cy={point.y} r={index === points.length - 1 ? 4.8 : 3.2} className="chart-point" />
+      ))}
+      {points.filter((_, index) => index % 2 === 0).map((point) => (
+        <text key={point.date} x={point.x - 14} y="290" className="chart-label">
+          {point.date}
+        </text>
+      ))}
+      <text x="28" y="26" className="chart-value">
+        {formatCurrency(first)}
+      </text>
+      <text x="640" y="26" className={last >= first ? 'chart-value chart-value--up' : 'chart-value chart-value--down'}>
+        {formatCurrency(last)}
+      </text>
     </svg>
   )
 }
 
 function RiskGauge({ stock }: { stock: StockProfile }) {
-  const score = Math.max(0, Math.min(100, stock.compositeRiskScore))
+  const score = Math.min(100, Math.max(0, stock.compositeRiskScore))
+
   return (
-    <div>
-      <div className='flex items-start justify-between gap-4'>
+    <div className="risk-gauge" role="img" aria-label={`${stock.symbol} composite risk score ${score} out of 100`}>
+      <div className="risk-gauge__header">
         <div>
-          <p className='text-xs uppercase tracking-[0.18em] text-zinc-500'>Composite Risk</p>
-          <p className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-xs ${riskColor(stock.riskLevel)}`}>{stock.riskLevel} Risk</p>
+          <p className="label">Composite Risk</p>
+          <p className={riskClass(stock.riskLevel)}>{stock.riskLevel}</p>
         </div>
-        <div className='text-right'>
-          <p className='text-2xl font-semibold tracking-tight text-white'>{score} / 100</p>
-          <p className='mt-1 text-xs text-zinc-500'>demo methodology</p>
-        </div>
+        <p className="risk-gauge__score">{score}<span>/100</span></p>
       </div>
-      <div className='mt-5 h-3 rounded-full bg-gradient-to-r from-emerald-400 via-yellow-300 via-orange-400 to-rose-500'>
-        <div className='relative h-3'>
-          <span className='absolute top-1/2 h-5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white ring-4 ring-black/45' style={{ left: `${score}%` }} />
-        </div>
+      <div className="risk-meter">
+        <span className="risk-meter__marker" style={{ left: `${score}%` }} />
       </div>
-      <div className='mt-3 grid grid-cols-4 text-[11px] font-medium uppercase tracking-[0.12em] text-zinc-500'>
-        <span>Low</span><span className='text-center'>Moderate</span><span className='text-center'>Elevated</span><span className='text-right'>Extreme</span>
+      <div className="risk-meter__labels">
+        <span>Low</span>
+        <span>Moderate</span>
+        <span>Elevated</span>
+        <span>Extreme</span>
       </div>
     </div>
   )
 }
 
-function StockSearch({ selected, onSelect }: { selected: StockProfile; onSelect: (symbol: string) => void }) {
+function ScoreBars({ stock }: { stock: StockProfile }) {
+  const rows = [
+    { label: 'Hype', value: stock.hypeScore, tone: 'var(--accent)' },
+    { label: 'Fundamentals', value: stock.fundamentalsScore, tone: 'var(--forest)' },
+    { label: 'Sentiment', value: stock.sentimentScore, tone: 'var(--amber)' },
+  ]
+
+  return (
+    <div className="score-list">
+      {rows.map((row) => (
+        <div key={row.label} className="score-row">
+          <span>{row.label}</span>
+          <div className="score-track">
+            <span className="score-fill" style={{ width: `${row.value}%`, backgroundColor: row.tone }} />
+          </div>
+          <strong>{row.value}</strong>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function SentimentBreakdown({ stock }: { stock: StockProfile }) {
+  return (
+    <div className="source-grid">
+      {stock.socialSentimentData.map((source) => (
+        <article key={source.source} className="source-card">
+          <div className="source-card__top">
+            <div>
+              <h3>{source.source}</h3>
+              <p>{source.mentions} mentions</p>
+            </div>
+            <span className={source.changePercent > 40 ? 'trend trend--risk' : 'trend trend--up'}>+{source.changePercent}%</span>
+          </div>
+          <div className="source-meter">
+            <span style={{ width: `${source.score}%` }} />
+          </div>
+          <p className="source-card__score">Sentiment score {source.score}/100</p>
+        </article>
+      ))}
+    </div>
+  )
+}
+
+function VolatilityPressure({ stock }: { stock: StockProfile }) {
+  const rows = [
+    { label: stock.symbol, value: stock.volatility30d },
+    { label: 'Sector average', value: stock.sectorAverageVolatility },
+    { label: 'High-beta peer average', value: stock.highBetaPeerAverageVolatility },
+  ]
+
+  return (
+    <div className="volatility-block">
+      <div className="section-heading section-heading--compact">
+        <div>
+          <p className="eyebrow">Volatility Benchmark</p>
+          <h2>{stock.volatility30d.toFixed(1)}%</h2>
+        </div>
+        <p className={stock.volatility30d > 45 ? 'risk-tag risk-tag--high' : 'risk-tag risk-tag--moderate'}>
+          {stock.volatility30d > 45 ? 'Crowded' : 'Orderly'}
+        </p>
+      </div>
+      <div className="volatility-list">
+        {rows.map((row) => (
+          <div key={row.label} className="benchmark-row">
+            <div>
+              <span>{row.label}</span>
+              <strong>{row.value.toFixed(1)}%</strong>
+            </div>
+            <div className="benchmark-track">
+              <span style={{ width: `${Math.min(100, row.value * 1.45)}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function StockSearch({
+  selected,
+  onSelect,
+}: {
+  selected: StockProfile
+  onSelect: (symbol: string) => void
+}) {
   const [query, setQuery] = useState('')
   const matches = useMemo(() => {
-    const text = query.trim().toLowerCase()
-    if (!text) return availableTickers
-    return availableTickers.filter((symbol) => symbol.toLowerCase().includes(text) || stockData[symbol].companyName.toLowerCase().includes(text))
+    const normalized = query.trim().toLowerCase()
+    if (!normalized) return availableTickers
+    return availableTickers.filter((symbol) => {
+      const stock = stockData[symbol]
+      return symbol.toLowerCase().includes(normalized) || stock.companyName.toLowerCase().includes(normalized)
+    })
   }, [query])
 
-  function choose(symbol: string) {
+  function selectSymbol(symbol: string) {
     onSelect(symbol)
     setQuery('')
   }
 
   return (
-    <section id='compare' className='glass-panel rounded-xl p-5 sm:p-6'>
-      <p className='text-xs uppercase tracking-[0.18em] text-cyan-200'>Compare Ticker</p>
-      <h2 className='mt-2 text-xl font-semibold text-white'>Search or quick-select a market name</h2>
-      <div className='mt-5 grid gap-4 lg:grid-cols-[1fr_430px] lg:items-start'>
+    <section id="compare" className="panel control-panel">
+      <div className="section-heading">
         <div>
-          <label htmlFor='ticker-search' className='mb-2 block text-xs uppercase tracking-[0.16em] text-zinc-500'>Symbol or company</label>
+          <p className="eyebrow">Compare Ticker</p>
+          <h2>Search the demo universe</h2>
+        </div>
+        <p>Current selection: {selected.symbol}</p>
+      </div>
+      <div className="control-grid">
+        <div className="search-field">
+          <label htmlFor="ticker-search">Symbol or company</label>
           <input
-            id='ticker-search'
+            id="ticker-search"
             value={query}
             onChange={(event) => setQuery(event.target.value.toUpperCase())}
-            onKeyDown={(event) => { if (event.key === 'Enter' && matches[0]) choose(matches[0]) }}
-            placeholder={`Try ${selected.symbol}, Microsoft, Coinbase, or Palantir`}
-            className='w-full rounded-lg border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-medium text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-300/70 focus:bg-white/[0.09]'
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && matches[0]) selectSymbol(matches[0])
+            }}
+            placeholder="Try Microsoft, Coinbase, Palantir"
           />
           {query && (
-            <div className='mt-3 overflow-hidden rounded-lg border border-white/10 bg-[#101715]/95 shadow-2xl backdrop-blur-xl'>
-              {matches.map((symbol) => (
-                <button key={symbol} type='button' onClick={() => choose(symbol)} className='flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-white/[0.08]'>
-                  <span className='min-w-0 truncate'><span className='font-semibold text-white'>{symbol}</span><span className='ml-3 text-sm text-zinc-400'>{stockData[symbol].companyName}</span></span>
-                  <span className={`shrink-0 rounded-full border px-2 py-1 text-xs ${riskColor(stockData[symbol].riskLevel)}`}>{stockData[symbol].riskLevel}</span>
-                </button>
-              ))}
+            <div className="search-results">
+              {matches.length === 0 && <p>No demo ticker matched that query.</p>}
+              {matches.map((symbol) => {
+                const stock = stockData[symbol]
+                return (
+                  <button key={symbol} type="button" onClick={() => selectSymbol(symbol)}>
+                    <span>
+                      <strong>{symbol}</strong>
+                      {stock.companyName}
+                    </span>
+                    <span className={riskClass(stock.riskLevel)}>{stock.riskLevel}</span>
+                  </button>
+                )
+              })}
             </div>
           )}
         </div>
-        <div className='grid grid-cols-3 gap-2 sm:grid-cols-6'>
+        <div className="quick-tickers" aria-label="Quick ticker selection">
           {quickTickers.map((symbol) => (
-            <button key={symbol} type='button' onClick={() => choose(symbol)} className={`rounded-lg border px-3 py-3 text-sm font-semibold transition ${selected.symbol === symbol ? 'border-cyan-300/70 bg-cyan-300/[0.15] text-cyan-100' : 'border-white/10 bg-white/[0.05] text-zinc-300 hover:border-white/25 hover:bg-white/[0.08]'}`}>
+            <button
+              key={symbol}
+              type="button"
+              onClick={() => selectSymbol(symbol)}
+              className={selected.symbol === symbol ? 'is-active' : ''}
+            >
               {symbol}
             </button>
           ))}
@@ -146,86 +285,268 @@ function StockSearch({ selected, onSelect }: { selected: StockProfile; onSelect:
   )
 }
 
-function KpiCard({ label, value, caption, tone }: { label: string; value: string; caption: string; tone: string }) {
+function MetricCard({ label, value, caption }: { label: string; value: string; caption: string }) {
   return (
-    <article className='kpi-card glass-panel p-4'>
-      <p className='text-xs uppercase tracking-[0.15em] text-zinc-500'>{label}</p>
-      <p className={`mt-3 bg-gradient-to-r ${tone} bg-clip-text text-2xl font-semibold text-transparent`}>{value}</p>
-      <p className='mt-2 min-h-10 text-sm leading-5 text-zinc-400'>{caption}</p>
+    <article className="metric-card">
+      <p className="label">{label}</p>
+      <strong>{value}</strong>
+      <span>{caption}</span>
     </article>
+  )
+}
+
+function WatchlistPanel({
+  selectedSymbol,
+  onSelect,
+}: {
+  selectedSymbol: string
+  onSelect: (symbol: string) => void
+}) {
+  return (
+    <section id="watchlist" className="panel">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Watchlist</p>
+          <h2>Tracked hype-risk names</h2>
+        </div>
+        <p>Select a row to update the workspace.</p>
+      </div>
+      <div className="watchlist-grid">
+        {quickTickers.map((symbol) => {
+          const stock = stockData[symbol]
+          const active = selectedSymbol === symbol
+          return (
+            <button key={symbol} type="button" onClick={() => onSelect(symbol)} className={active ? 'watch-card is-active' : 'watch-card'}>
+              <span>
+                <strong>{symbol}</strong>
+                <small>{stock.companyName}</small>
+              </span>
+              <span>
+                <strong>{formatCurrency(stock.currentPrice)}</strong>
+                <small className={trendClass(stock.dailyChangePercent)}>{signedPercent(stock.dailyChangePercent)}</small>
+              </span>
+              <span className={riskClass(stock.riskLevel)}>{stock.riskLevel}</span>
+            </button>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function MethodologyPanel() {
+  const methods = [
+    ['Hype Score', 'Mention growth, source breadth, news velocity, and options activity proxy.'],
+    ['Fundamentals Score', 'Growth, revisions, margin quality, and valuation versus sector peers.'],
+    ['Sentiment Score', 'Source-weighted polarity across social, news, and community signals.'],
+    ['Composite Risk', 'Volatility pressure, hype divergence, sentiment dispersion, and retail crowding.'],
+  ]
+
+  return (
+    <section id="methodology" className="panel">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Methodology</p>
+          <h2>Transparent demo scoring</h2>
+        </div>
+        <p>Portfolio model framework</p>
+      </div>
+      <div className="method-grid">
+        {methods.map(([title, detail]) => (
+          <article key={title} className="method-card">
+            <h3>{title}</h3>
+            <p>{detail}</p>
+          </article>
+        ))}
+      </div>
+    </section>
   )
 }
 
 export default function App() {
   const [selectedSymbol, setSelectedSymbol] = useState('NVDA')
   const [activeSection, setActiveSection] = useState('overview')
-  const selected = stockData[selectedSymbol] ?? stockData.NVDA
-  const kpis = [
-    { label: 'Current Price', value: money(selected.currentPrice), caption: `${selected.volume} shares traded`, tone: 'from-zinc-50 to-cyan-200' },
-    { label: '1D Price Return', value: pct(selected.dailyChangePercent), caption: 'Demo regular-session move', tone: selected.dailyChangePercent >= 0 ? 'from-emerald-200 to-lime-300' : 'from-rose-200 to-orange-300' },
-    { label: '30D Realized Volatility', value: `${selected.volatility30d.toFixed(1)}%`, caption: `Sector benchmark ${selected.sectorAverageVolatility.toFixed(1)}%`, tone: 'from-amber-200 to-orange-300' },
-    { label: 'Hype Score', value: `${selected.hypeScore}/100`, caption: 'Mention growth, news velocity, options proxy', tone: 'from-cyan-200 to-sky-300' },
-    { label: 'Fundamentals Score', value: `${selected.fundamentalsScore}/100`, caption: 'Growth, revisions, margins, valuation', tone: 'from-lime-200 to-emerald-300' },
-    { label: 'Composite Risk Level', value: selected.riskLevel, caption: `Composite score ${selected.compositeRiskScore}/100`, tone: 'from-rose-200 to-amber-200' },
+  const selected = stockData[selectedSymbol]
+  const metrics = [
+    { label: 'Current Price', value: formatCurrency(selected.currentPrice), caption: `${selected.volume} shares traded` },
+    { label: '1D Return', value: signedPercent(selected.dailyChangePercent), caption: 'Demo regular-session move' },
+    { label: '30D Volatility', value: `${selected.volatility30d.toFixed(1)}%`, caption: `Sector benchmark ${selected.sectorAverageVolatility.toFixed(1)}%` },
+    { label: 'Hype Score', value: `${selected.hypeScore}/100`, caption: 'Crowd attention proxy' },
+    { label: 'Fundamentals', value: `${selected.fundamentalsScore}/100`, caption: 'Quality support score' },
+    { label: 'Retail Growth', value: `+${selected.retailMentionGrowth}%`, caption: '30-day mention growth' },
   ]
 
   return (
-    <div className='min-h-screen bg-[radial-gradient(circle_at_15%_10%,rgba(34,211,238,0.16),transparent_28%),radial-gradient(circle_at_86%_4%,rgba(163,230,53,0.12),transparent_24%),linear-gradient(135deg,#07100e_0%,#0a0d12_48%,#10100b_100%)] text-zinc-50'>
-      <div className='mx-auto grid min-h-screen w-full max-w-[1800px] lg:grid-cols-[240px_minmax(0,1fr)]'>
-        <aside className='border-b border-white/10 bg-white/[0.045] px-4 py-4 backdrop-blur-2xl lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:border-b-0 lg:border-r lg:px-5 lg:py-6'>
-          <div className='flex flex-wrap items-center justify-between gap-3 lg:block'>
-            <div><p className='text-sm font-semibold uppercase tracking-[0.24em] text-cyan-200'>Volterra</p><h1 className='mt-2 text-lg font-semibold tracking-tight'>Hype Risk Terminal</h1></div>
-            <span className='rounded-full border border-emerald-300/30 bg-emerald-300/10 px-3 py-1 text-xs text-emerald-200 lg:mt-6 lg:inline-flex'>Demo model</span>
-          </div>
-          <nav className='mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:mt-10 lg:block lg:space-y-2'>
-            {navItems.map((item) => (
-              <a key={item.id} href={`#${item.id}`} aria-current={activeSection === item.id ? 'page' : undefined} onClick={() => setActiveSection(item.id)} className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition ${activeSection === item.id ? 'bg-white/[0.12] text-white' : 'text-zinc-400 hover:bg-white/[0.08] hover:text-white'}`}>
-                <span className='h-1.5 w-1.5 rounded-full bg-cyan-300' />{item.label}
-              </a>
-            ))}
-          </nav>
-        </aside>
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="brand-block">
+          <p>Stock Hype</p>
+          <h1>Risk Analyzer</h1>
+          <span>Research workspace</span>
+        </div>
 
-        <main className='min-w-0 px-4 py-6 sm:px-6 lg:px-8 lg:py-8'>
-          <div className='mx-auto flex w-full max-w-7xl flex-col gap-6'>
-            <header id='overview' className='glass-panel rounded-xl p-5 sm:p-6'>
-              <div className='grid gap-5 xl:grid-cols-[1fr_360px] xl:items-start'>
-                <div>
-                  <div className='flex flex-wrap items-center gap-3'><span className={`rounded-full border px-3 py-1 text-xs ${riskColor(selected.riskLevel)}`}>{selected.riskLevel} risk</span><span className='text-sm text-zinc-500'>Demo snapshot {selected.lastUpdated}</span></div>
-                  <h2 className='mt-4 text-3xl font-semibold tracking-tight md:text-5xl'>Market intelligence for {selected.symbol}</h2>
-                  <p className='mt-3 max-w-3xl text-base leading-7 text-zinc-300'>Compare social acceleration, sentiment, benchmark volatility, and fundamentals to understand when crowd behavior is creating excess factor risk.</p>
-                </div>
-                <div className='rounded-lg border border-white/10 bg-black/20 p-4'><RiskGauge stock={selected} /></div>
+        <nav className="side-nav" aria-label="Dashboard sections">
+          {navItems.map((item) => (
+            <a
+              key={item.id}
+              href={`#${item.id}`}
+              aria-current={activeSection === item.id ? 'page' : undefined}
+              onClick={() => setActiveSection(item.id)}
+            >
+              {item.label}
+            </a>
+          ))}
+        </nav>
+
+        <div className="sidebar-watch">
+          <p className="label">Active Universe</p>
+          {quickTickers.map((symbol) => {
+            const stock = stockData[symbol]
+            return (
+              <button key={symbol} type="button" onClick={() => setSelectedSymbol(symbol)} className={selected.symbol === symbol ? 'is-active' : ''}>
+                <span>{symbol}</span>
+                <small className={riskClass(stock.riskLevel)}>{stock.riskLevel}</small>
+              </button>
+            )
+          })}
+        </div>
+      </aside>
+
+      <main className="workspace">
+        <div className="workspace-inner">
+          <header id="overview" className="hero-panel">
+            <div className="hero-copy">
+              <div className="tag-row">
+                <span className={riskClass(selected.riskLevel)}>{selected.riskLevel} risk</span>
+                <span className={confidenceClass(selected.confidence)}>{selected.confidence}</span>
+                <span className="timestamp">{selected.lastUpdated}</span>
               </div>
-            </header>
+              <p className="eyebrow">Selected Equity</p>
+              <h2>{selected.symbol}</h2>
+              <p className="company-name">{selected.companyName}</p>
+              <p className="hero-summary">{selected.riskSummary}</p>
+            </div>
+            <div className="hero-context">
+              <RiskGauge stock={selected} />
+              <div className="context-grid">
+                <div>
+                  <span>Sector</span>
+                  <strong>{selected.sector}</strong>
+                </div>
+                <div>
+                  <span>Market Cap</span>
+                  <strong>{selected.marketCap}</strong>
+                </div>
+                <div>
+                  <span>Volume</span>
+                  <strong>{selected.volume}</strong>
+                </div>
+              </div>
+            </div>
+          </header>
 
-            <section id='market-pulse' className='glass-panel rounded-xl px-4 py-4'>
-              <div className='mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between'><div><p className='text-xs uppercase tracking-[0.18em] text-zinc-500'>Market Pulse</p><h2 className='mt-1 text-lg font-semibold'>Cross-asset overview</h2></div><p className='text-sm text-zinc-500'>Macro tape snapshot</p></div>
-              <div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-6'>{marketOverview.map((tick) => <div key={tick.label} className='rounded-md border border-white/[0.08] bg-black/[0.15] px-3 py-2'><p className='text-xs uppercase tracking-[0.12em] text-zinc-500'>{tick.label}</p><div className='mt-1 flex items-baseline justify-between gap-2'><span className='text-sm font-semibold text-zinc-100'>{tick.value}</span><span className={tick.change.startsWith('-') ? 'text-xs text-rose-300' : 'text-xs text-emerald-300'}>{tick.change}</span></div></div>)}</div>
-            </section>
+          <section id="market-pulse" className="market-strip" aria-label="Market pulse">
+            {marketOverview.map((tick) => (
+              <article key={tick.label}>
+                <p>{tick.label}</p>
+                <strong>{tick.value}</strong>
+                <span className={tick.change.startsWith('-') ? 'trend trend--down' : 'trend trend--up'}>{tick.change}</span>
+              </article>
+            ))}
+          </section>
 
-            <StockSearch selected={selected} onSelect={setSelectedSymbol} />
+          <StockSearch selected={selected} onSelect={setSelectedSymbol} />
+          <WatchlistPanel selectedSymbol={selected.symbol} onSelect={setSelectedSymbol} />
 
-            <section id='watchlist' className='glass-panel rounded-xl p-5 sm:p-6'>
-              <p className='text-xs uppercase tracking-[0.18em] text-zinc-500'>Watchlist</p><h2 className='mt-2 text-xl font-semibold'>Tracked hype-risk names</h2>
-              <div className='mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3'>{quickTickers.map((symbol) => <button key={symbol} type='button' onClick={() => setSelectedSymbol(symbol)} className={`rounded-xl border p-4 text-left transition ${selected.symbol === symbol ? 'border-cyan-300/60 bg-cyan-300/[0.12]' : 'border-white/10 bg-black/[0.16] hover:border-white/25 hover:bg-white/[0.06]'}`}><div className='flex items-start justify-between gap-3'><div><p className='text-lg font-semibold text-white'>{symbol}</p><p className='mt-1 text-sm text-zinc-500'>{stockData[symbol].companyName}</p></div><span className={`rounded-full border px-2.5 py-1 text-xs ${riskColor(stockData[symbol].riskLevel)}`}>{stockData[symbol].riskLevel}</span></div><p className='mt-4 text-sm text-zinc-400'>{money(stockData[symbol].currentPrice)} / {pct(stockData[symbol].dailyChangePercent)}</p></button>)}</div>
-            </section>
+          <section className="metric-grid">
+            {metrics.map((metric) => (
+              <MetricCard key={metric.label} {...metric} />
+            ))}
+          </section>
 
-            <section className='grid gap-4 sm:grid-cols-2 xl:grid-cols-3'>{kpis.map((kpi) => <KpiCard key={kpi.label} {...kpi} />)}</section>
+          <section className="analysis-grid">
+            <article className="panel panel--large">
+              <div className="section-heading">
+                <div>
+                  <p className="eyebrow">Historical Price Trend</p>
+                  <h2>{selected.symbol} 30-day market path</h2>
+                </div>
+                <p className={trendClass(selected.dailyChangePercent)}>{signedPercent(selected.dailyChangePercent)} today</p>
+              </div>
+              <div className="chart-frame">
+                <PriceTrendChart key={selected.symbol} stock={selected} />
+              </div>
+            </article>
 
-            <section className='grid gap-5 xl:grid-cols-[1.35fr_0.65fr]'>
-              <article className='glass-panel p-5 sm:p-6'><p className='text-xs uppercase tracking-[0.18em] text-zinc-500'>Historical Price Trend</p><h2 className='mt-2 text-xl font-semibold'>{selected.symbol} 30 day market path</h2><div className='mt-5 h-[280px] sm:h-[340px]'><PriceChart stock={selected} /></div></article>
-              <article id='sentiment' className='glass-panel p-5 sm:p-6'><p className='text-xs uppercase tracking-[0.18em] text-zinc-500'>Sentiment Source Breakdown</p><h2 className='mt-2 text-xl font-semibold'>Where the crowd is leaning</h2><div className='mt-5 grid gap-3'>{selected.socialSentimentData.map((source) => <div key={source.source} className='rounded-lg border border-white/10 bg-white/[0.04] p-4'><div className='flex items-center justify-between'><p className='font-medium text-zinc-100'>{source.source}</p><span className='text-sm text-emerald-200'>+{source.changePercent}%</span></div><div className='mt-3 h-2 rounded-full bg-white/10'><div className='h-2 rounded-full bg-gradient-to-r from-cyan-300 to-lime-300' style={{ width: `${source.score}%` }} /></div><p className='mt-2 text-xs text-zinc-500'>{source.mentions} mentions / score {source.score}</p></div>)}</div></article>
-            </section>
+            <article className="panel">
+              <div className="section-heading section-heading--compact">
+                <div>
+                  <p className="eyebrow">Hype vs Fundamentals</p>
+                  <h2>Signal balance</h2>
+                </div>
+              </div>
+              <ScoreBars stock={selected} />
+              <VolatilityPressure stock={selected} />
+            </article>
+          </section>
 
-            <section id='signal-breakdown' className='glass-panel p-5 sm:p-6'><p className='text-xs uppercase tracking-[0.18em] text-zinc-500'>Signal Breakdown</p><h2 className='mt-2 text-xl font-semibold'>Model inputs</h2><div className='mt-5 space-y-3'>{selected.signalBreakdown.map((signal) => <div key={signal.signal} className='grid gap-3 rounded-lg border border-white/10 bg-black/[0.15] p-4 md:grid-cols-[150px_80px_110px_1fr] md:items-center'><p className='font-medium text-zinc-100'>{signal.signal}</p><p className='text-sm text-zinc-300'>{signal.score}/100</p><p className='text-sm text-cyan-200'>{signal.trend}</p><p className='text-sm leading-5 text-zinc-400'>{signal.interpretation}</p></div>)}</div></section>
+          <section className="detail-grid">
+            <article id="sentiment" className="panel">
+              <div className="section-heading">
+                <div>
+                  <p className="eyebrow">Sentiment Source Breakdown</p>
+                  <h2>Where the crowd is leaning</h2>
+                </div>
+              </div>
+              <SentimentBreakdown stock={selected} />
+            </article>
 
-            <section id='risk-drivers' className='glass-panel p-5 sm:p-6'><p className='text-xs uppercase tracking-[0.18em] text-zinc-500'>Why this risk level?</p><h2 className='mt-2 text-2xl font-semibold'>{selected.riskLevel} risk for {selected.symbol}</h2><div className='mt-5 grid gap-3'>{selected.topRiskDrivers.map((driver, index) => <div key={driver} className='rounded-lg border border-white/10 bg-white/[0.04] p-4'><p className='text-xs uppercase tracking-[0.14em] text-cyan-200'>Reason {index + 1}</p><p className='mt-2 text-sm leading-6 text-zinc-300'>{driver}</p></div>)}</div></section>
+            <article id="risk-drivers" className="panel">
+              <div className="section-heading">
+                <div>
+                  <p className="eyebrow">Risk Drivers</p>
+                  <h2>Why {selected.symbol} is flagged</h2>
+                </div>
+              </div>
+              <div className="driver-list">
+                {selected.topRiskDrivers.map((driver, index) => (
+                  <article key={driver}>
+                    <span>{String(index + 1).padStart(2, '0')}</span>
+                    <p>{driver}</p>
+                  </article>
+                ))}
+              </div>
+            </article>
+          </section>
 
-            <footer className='rounded-xl border border-white/10 bg-black/[0.18] p-5 text-sm leading-6 text-zinc-400'><p className='font-medium text-zinc-200'>Demo data only.</p><p className='mt-2'>Figures are structured mock values for portfolio demonstration and should not be interpreted as live or investment-grade data.</p></footer>
-          </div>
-        </main>
-      </div>
+          <section id="signal-breakdown" className="panel">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">Signal Breakdown</p>
+                <h2>Model inputs</h2>
+              </div>
+              <p>Scores are mock values for portfolio demonstration.</p>
+            </div>
+            <div className="signal-table">
+              {selected.signalBreakdown.map((signal) => (
+                <article key={signal.signal}>
+                  <strong>{signal.signal}</strong>
+                  <span>{signal.score}/100</span>
+                  <small>{signal.trend}</small>
+                  <p>{signal.interpretation}</p>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <MethodologyPanel />
+
+          <footer className="site-footer">
+            <strong>Demo data only.</strong>
+            <span>Designed to simulate future integrations with market, social, news, and options data providers.</span>
+          </footer>
+        </div>
+      </main>
     </div>
   )
 }
