@@ -380,9 +380,9 @@ export default function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand-block">
-          <p>Stock Hype</p>
-          <h1>Risk Analyzer</h1>
-          <span>Research workspace</span>
+          <p>Hype Risk</p>
+          <h1>Market Desk</h1>
+          <span>Equity signal workspace</span>
         </div>
 
         <nav className="side-nav" aria-label="Dashboard sections">
@@ -421,7 +421,7 @@ export default function App() {
                 <span className={confidenceClass(selected.confidence)}>{selected.confidence}</span>
                 <span className="timestamp">{selected.lastUpdated}</span>
               </div>
-              <p className="eyebrow">Selected Equity</p>
+              <p className="eyebrow">Active Memo</p>
               <h2>{selected.symbol}</h2>
               <p className="company-name">{selected.companyName}</p>
               <p className="hero-summary">{selected.riskSummary}</p>
